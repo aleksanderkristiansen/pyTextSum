@@ -32,22 +32,32 @@ batch_size = 32
 learning_rate = 0.01
 
 def load_texts_and_summaries(path, TextVecorizationLevel="sentence"):
+    '''
+    Loads texts and their summaries into separate parallel arrays from a specified
+    folder. The specified folder should contain .txt files with the summary on
+    the first line and the text on subsequent ones, or another folder following
+    the same specified format.
+
+    @param path path to data folder
+    @return Tuple (text_list, summary_list)
+    '''
     texts = []
     summaries = []
-    for filename in os.listdir(path):
-        if filename.endswith(".txt"):
-            with open(path+"/"+filename, 'r') as f:
-                x = f.readlines()
-                summaries.append(x[0].strip())
-                if(TextVecorizationLevel == 'sentence'):
-                    paragraph = " ".join(x[1:]).strip()
-                    texts.append(extract_sentences_from_paragraph(paragraph))
-                elif(TextVecorizationLevel == 'paragraph'):
-                    paragraph = " ".join(x[1:]).strip()
-                    texts.append(paragraph)
-                else:
-                    paragraph = " ".join(x[1:]).strip()
-                    texts.append(paragraph)
+    for subdir, dirs, files in os.walk(path):
+        for filename in files:
+            if filename.endswith(".txt"):
+                with open(os.path.join(subdir, filename), 'r') as f:
+                    x = f.readlines()
+                    summaries.append(x[0].strip())
+                    if(TextVecorizationLevel == 'sentence'):
+                        paragraph = " ".join(x[1:]).strip()
+                        texts.append(extract_sentences_from_paragraph(paragraph))
+                    elif(TextVecorizationLevel == 'paragraph'):
+                        paragraph = " ".join(x[1:]).strip()
+                        texts.append(paragraph)
+                    else:
+                        paragraph = " ".join(x[1:]).strip()
+                        texts.append(paragraph)
         #break
     return (texts, summaries)
 
@@ -56,6 +66,25 @@ def extract_sentences_from_paragraph(paragraph):
     return [s for s in sentences if len(s.strip()) != 0]
 
 def vectorize_texts_and_summaries(texts, summaries):
+    '''
+    Takes a list of texts and a list of summaries and vectorizes them, returning
+    two parallel lists of the vectorized texts and summaries. Texts are
+    vectorised such that the word embedding for each word in the sentence is
+    inferred and all the constituent embeddings are concatenated up until MAX_SENTENCE_LEN
+    words. If a text has less than MAX_SENTENCE_LEN it is padded with zeros. This
+    brings setence vectors to be of shape MAX_SUMMARY_LEN-times-EMBEDDING_SIZE.
+    Summaries are vectorised in a similar way but MAX_SENTENCE_LEN is replaced
+    with MAX_SUMMARY_LEN. Each sntence in a text has the same target (the text summary)
+    which is returned in the parallel summaries vectors list
+
+    @param texts List<List<String>> a list containing another list of Strings
+        where each string in the nested list represents a sentence from the text.
+        (Another way to think about it is a list of sentences where a sentence is List<String>)
+    @param summaries List<String> a list parallel to @param<texts> which contains
+        a string summary of the texts.
+    @return Tuple(List<np.array>, List<np.array>)
+
+    '''
     global spacy_nlp
     t_vectors = []
     source_text_vectors = []
@@ -95,6 +124,16 @@ def vectorize_texts_and_summaries(texts, summaries):
     return (source_text_vectors, target_summary_vectors)
 
 def vectorize_text(text_string):
+    '''
+    Takes a sentece and vectorizes it such that the word embedding for each word
+    in the embedding is inferred and all the constituent embeddings are
+    concatenated up until MAX_SENTENCE_LEN
+    words. If a string has less than MAX_SENTENCE_LEN it is padded with zeros
+
+    @param String Text to be vectorized
+    @return np.array of shape (MAX_SENTENCE_LEN-times-EMBEDDING_SIZE)
+
+    '''
     global spacy_nlp
     global MAX_SENTENCE_LEN
     global EMBEDDING_SIZE
@@ -132,6 +171,14 @@ def create_inputs_and_outputs(texts, summaries, textVecorizationLevel="sentence"
 
 
 def next_batch(all_inputs, all_outputs):
+    '''
+    Iterates in batches through the dataset, given as parallel arrays
+    all_inputs and all_outputs, wrapping around as needed.
+
+    @param all_inputs List<np.array> sentences from texts
+    @param all_outputs List<np.sarray> summaries for texts
+    @return batch to be used by TensorFlow model
+    '''
     global p
 
     batch_x = np.zeros((batch_size, input_num_units))
@@ -244,11 +291,7 @@ def train(all_inputs, all_outputs):
         print(sess.run(tf.round(pred_probs), feed_dict={x: unit_batch_x}))
 
 
-
-
-
-
-t,s = load_texts_and_summaries("bbc/sport")
+t,s = load_texts_and_summaries("bbc")
 #print("{} {}".format(s[0], t[0]))
 inputs,outputs = vectorize_texts_and_summaries(t, s)
 #print("{}".format(outputs[0]))
