@@ -24,10 +24,10 @@ accuracy_print_interval = 5
 
 # number of neurons in each layer
 input_num_units = MAX_SENTENCE_LEN*EMBEDDING_SIZE
-hidden_num_units = 500
+hidden_num_units = 1500
 output_num_units = MAX_SENTENCE_LEN
 
-epochs = 200
+epochs = 20
 batch_size = 32
 learning_rate = 0.01
 
@@ -72,9 +72,13 @@ def vectorize_texts_and_summaries(texts, summaries):
     vectorised such that the word embedding for each word in the sentence is
     inferred and all the constituent embeddings are concatenated up until MAX_SENTENCE_LEN
     words. If a text has less than MAX_SENTENCE_LEN it is padded with zeros. This
-    brings setence vectors to be of shape MAX_SUMMARY_LEN-times-EMBEDDING_SIZE.
-    Summaries are vectorised in a similar way but MAX_SENTENCE_LEN is replaced
-    with MAX_SUMMARY_LEN. Each sntence in a text has the same target (the text summary)
+    brings setence vectors to be of shape MAX_SENTENCE_LEN-times-EMBEDDING_SIZE.
+    Summaries arent vectorised so to speak. A target is created for each sentence
+    in the text based on the summary. This target is whether or not a word in the
+    sentence appears in the summary. This target is vectorised. As such in the returned
+    summaries matrix, we have vectors of size MAX_SENTENCE_LEN with 1s and 0s.
+
+    Each sntence in a text has the same target (the text summary)
     which is returned in the parallel summaries vectors list
 
     @param texts List<List<String>> a list containing another list of Strings
@@ -82,14 +86,17 @@ def vectorize_texts_and_summaries(texts, summaries):
         (Another way to think about it is a list of sentences where a sentence is List<String>)
     @param summaries List<String> a list parallel to @param<texts> which contains
         a string summary of the texts.
-    @return Tuple(List<np.array>, List<np.array>)
+    @return Tuple(np.array((len(texts), MAX_SENTENCE_LEN*EMBEDDING_SIZE)), np.zeros((len(summaries), MAX_SENTENCE_LEN)))
 
     '''
     global spacy_nlp
+    global MAX_SENTENCE_LEN
+    nested_list_len = lambda x: sum(len(list) for list in x)
     t_vectors = []
-    source_text_vectors = []
+    source_text_vectors = np.zeros((nested_list_len(texts), MAX_SENTENCE_LEN*EMBEDDING_SIZE))
     s_vectors = []
-    target_summary_vectors = []
+    target_summary_vectors = np.zeros((nested_list_len(texts), MAX_SENTENCE_LEN))
+    vec_idx = 0
 
     if(type(texts[0]) == list):
         for i in xrange(len(texts)):
@@ -110,8 +117,9 @@ def vectorize_texts_and_summaries(texts, summaries):
                 while(len(sentence_vector) < MAX_SENTENCE_LEN*EMBEDDING_SIZE):
                     sentence_vector = np.append(sentence_vector,np.zeros(EMBEDDING_SIZE))
                     target_vector = np.append(target_vector, 0)
-                source_text_vectors.append(sentence_vector)
-                target_summary_vectors.append(target_vector)
+                source_text_vectors[vec_idx] = sentence_vector
+                target_summary_vectors[vec_idx] = target_vector
+                vec_idx+=1
     elif(type(texts[0]) == str):
         for i in xrange(len(texts)):
             text = texts[i]
@@ -148,26 +156,26 @@ def vectorize_text(text_string):
         sentence_vector = np.append(sentence_vector,np.zeros(EMBEDDING_SIZE))
     return sentence_vector
 
-def create_inputs_and_outputs(texts, summaries, textVecorizationLevel="sentence"):
-    '''
-    Creates inputs and outputs such that input is a list of sentence vectors where
-    a sentence vector is a concatenation of its constituent word vectors. The output
-    is of the same length as the input but has a 1 when that constituent word should
-    appear in the summary and 0 when not.
-    '''
-    inputs = []
-    outputs = []
-    if(textVecorizationLevel == 'sentence'):
-        for i in xrange(len(summaries)):
-            sentences = texts[i]
-            for s in sentences:
-                inputs.append(s)
-                outputs.append(summaries[i])
-    else:
-        for i in xrange(len(summaries)):
-            inputs.append(text[i])
-            outputs.append(summaries[i])
-    return (inputs, outputs)
+# def create_inputs_and_outputs(texts, summaries, textVecorizationLevel="sentence"):
+#     '''
+#     Creates inputs and outputs such that input is a list of sentence vectors where
+#     a sentence vector is a concatenation of its constituent word vectors. The output
+#     is of the same length as the input but has a 1 when that constituent word should
+#     appear in the summary and 0 when not.
+#     '''
+#     inputs = []
+#     outputs = []
+#     if(textVecorizationLevel == 'sentence'):
+#         for i in xrange(len(summaries)):
+#             sentences = texts[i]
+#             for s in sentences:
+#                 inputs.append(s)
+#                 outputs.append(summaries[i])
+#     else:
+#         for i in xrange(len(summaries)):
+#             inputs.append(text[i])
+#             outputs.append(summaries[i])
+#     return (inputs, outputs)
 
 
 def next_batch(all_inputs, all_outputs):
@@ -175,8 +183,8 @@ def next_batch(all_inputs, all_outputs):
     Iterates in batches through the dataset, given as parallel arrays
     all_inputs and all_outputs, wrapping around as needed.
 
-    @param all_inputs List<np.array> sentences from texts
-    @param all_outputs List<np.sarray> summaries for texts
+    @param all_inputs  np.array((batch_size, input_num_units)) sentences from texts
+    @param all_outputs np.array((batch_size, input_num_units)) summaries for texts
     @return batch to be used by TensorFlow model
     '''
     global p
@@ -241,6 +249,9 @@ def train(all_inputs, all_outputs):
     'output': tf.Variable(tf.random_normal([output_num_units]))
     }
 
+    # 'Saver' op to save and restore all the variables
+    saver = tf.train.Saver()
+
     # Now create our neural networks computational graph
     # Wx.Wh + Bh
     hidden_layer = tf.add(tf.matmul(x, weights['hidden']), biases['hidden'])
@@ -283,6 +294,8 @@ def train(all_inputs, all_outputs):
                 acc = sess.run(accuracy, feed_dict={x: batch_x, y: batch_y})
                 print "Training Accuracy: ", "{:.5f}".format(acc)
         print "\nTraining complete!"
+        save_path = saver.save(sess, "Serial/bbc_textsum")
+        print("Model saved in file: %s" % save_path)
 
         # Test on one sentence
         test = "British hurdler Sarah Claxton is confident she can win her first major medal at next month's European Indoor Championships in Madrid"
@@ -291,12 +304,18 @@ def train(all_inputs, all_outputs):
         print(sess.run(tf.round(pred_probs), feed_dict={x: unit_batch_x}))
 
 
-t,s = load_texts_and_summaries("bbc")
-#print("{} {}".format(s[0], t[0]))
-inputs,outputs = vectorize_texts_and_summaries(t, s)
-#print("{}".format(outputs[0]))
+# t,s = load_texts_and_summaries("bbc")
+# #print("{} {}".format(s[0], t[0]))
+# inputs,outputs = vectorize_texts_and_summaries(t, s)
+# # SAVE
+# np.save('Serial/inputs.npy', inputs, allow_pickle=False)
+# np.save('Serial/outputs.npy', outputs, allow_pickle=False)
+# LOAD
+inputs = np.load('Serial/inputs.npy')
+outputs = np.load('Serial/outputs.npy')
+# print("{}".format(outputs[0]))
 # print(len(inputs[0]))
-#print(len(outputs))
+# print(len(outputs))
 train(inputs,outputs)
 
 # doc1 = spacy_nlp(u"European leaders say Asian states must let their currencies rise against the US dollar to ease pressure on the euro.")
