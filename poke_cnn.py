@@ -28,7 +28,7 @@ CHANNELS = 3
 N_CLASSES = 5
 TARGETS = ['bulbasaur', 'charmander', 'squirtle', 'pikachu', 'mewtwo']
 
-EPOCHS = 100
+EPOCHS = 120
 LEARNING_RATE = 1e-3
 BATCH_SIZE = 32
 
@@ -53,13 +53,14 @@ class PokemonDataset(object):
 
         # loop over the input images to properly vectorize them and store labels
         for path in image_paths[:1161]:
-            img = io.imread(image_paths[0])
+            #print path
+            img = io.imread(path)
             img_resized = transform.resize(img, IMAGE_DIMS)
             self.images.append(img_resized)
 
             label = path.split(os.path.sep)[-2]
             label_vec = np.zeros(N_CLASSES)
-            label_vec[TARGETS.index('squirtle')] = 1
+            label_vec[TARGETS.index(label)] = 1
             self.labels.append(label_vec)
 
         # scale the raw pixel intensities to the range [0, 1]
@@ -71,49 +72,54 @@ class PokemonDataset(object):
         self.trainX, self.testX, self.trainY, self.testY = train_test_split(self.images,
         	self.labels, test_size=0.2, random_state=42)
 
-        self.data_index = 0
+        self.train_data_index = 0
+        self.test_data_index = 0
 
     def next_batch_train(self, batch_size):
         batch_x = np.zeros((batch_size, HEIGHT, WIDTH, CHANNELS),dtype=np.float32)
         batch_y = np.zeros((batch_size, N_CLASSES),dtype=np.float32)
 
-        if self.data_index + batch_size >= len(self.trainX):
-            self.data_index = 0
+        if self.train_data_index + batch_size >= len(self.trainX):
+            self.train_data_index = 0
 
         #print("FETCHING BATCH FOR IMAGES {} - {}..".format(self.data_index+1, self.data_index + batch_size))
 
         vec_idx = 0
-        for i in range(self.data_index,self.data_index+batch_size):
+        for i in range(self.train_data_index,self.train_data_index+batch_size):
             batch_x[vec_idx] = self.trainX[i]
             batch_y[vec_idx] = self.trainY[i]
+            vec_idx += 1
 
-        self.data_index = (self.data_index + batch_size) % len(self.trainX)
-
+        self.train_data_index = (self.train_data_index + batch_size) % len(self.trainX)
         return batch_x,batch_y
 
     def next_batch_test(self, batch_size):
         batch_x = np.zeros((batch_size, HEIGHT, WIDTH, CHANNELS),dtype=np.float32)
         batch_y = np.zeros((batch_size, N_CLASSES),dtype=np.float32)
 
-        if self.data_index + batch_size >= len(self.testX):
-            self.data_index = 0
+        if self.test_data_index + batch_size >= len(self.testX):
+            self.test_data_index = 0
 
         #print("FETCHING BATCH FOR IMAGES {} - {}..".format(self.data_index+1, self.data_index + batch_size))
 
         vec_idx = 0
-        for i in range(self.data_index,self.data_index+batch_size):
+        for i in range(self.test_data_index,self.test_data_index+batch_size):
             batch_x[vec_idx] = self.testX[i]
             batch_y[vec_idx] = self.testY[i]
+            vec_idx += 1
 
-        self.data_index = (self.data_index + batch_size) % len(self.testX)
+        self.test_data_index = (self.test_data_index + batch_size) % len(self.testX)
 
         return batch_x,batch_y
 
-    def size(self):
-        return len(self.images)
+    def train_size(self):
+        return len(self.trainX)
+
+    def test_size(self):
+        return len(self.testX)
 
 def conv2d(x, W):
- return tf.nn.conv2d(x, W, strides=[1,1,1,1], padding='VALID')
+ return tf.nn.conv2d(x, W, strides=[1,1,1,1], padding='SAME')
 
 # tf Graph input. None means that the first dimension can be of any size so it represents the batch size
 x = tf.placeholder("float", [None, HEIGHT, WIDTH, CHANNELS])
@@ -134,7 +140,7 @@ weights = {
     'w3': tf.Variable(tf.truncated_normal([3,3,64,64], stddev=0.1)),
     'w4': tf.Variable(tf.truncated_normal([2,2,64,128], stddev=0.1)),
     'w5': tf.Variable(tf.truncated_normal([2,2,128,128], stddev=0.1)),
-    'w6': tf.Variable(tf.truncated_normal([5*5*128,1024], stddev=0.1)),# output of previous layer should be 7*7 image with 64 channels so flatten in final layer by multipling
+    'w6': tf.Variable(tf.truncated_normal([8*8*128,1024], stddev=0.1)),# output of previous layer should be 7*7 image with 64 channels so flatten in final layer by multipling
     'w7': tf.Variable(tf.truncated_normal([1024,5], stddev=0.1))
 }
 
@@ -161,7 +167,7 @@ h_conv1 = tf.nn.relu(h_conv1)
 h_pool1 = tf.layers.max_pooling2d(h_conv1, (3,3),3)
 
 # Add dropout
-h_pool1_drop = tf.nn.dropout(h_pool1, 0.25)
+h_pool1_drop = tf.nn.dropout(h_pool1, 0.1)
 print(h_pool1_drop)
 
 # Apply convolution and relu to image (2nd conv layer and 3rd conv layer):
@@ -174,7 +180,7 @@ h_pool3 = tf.layers.max_pooling2d(h_conv3, (2,2),2)
 print(h_pool3)
 
 # Add dropout
-h_pool3_drop = tf.nn.dropout(h_pool3, 0.25)
+h_pool3_drop = tf.nn.dropout(h_pool3, 0.1)
 
 # another set of   (CONV => RELU) * 2 => POOL
 h_conv4 = tf.nn.relu(conv2d(h_pool3_drop, weights['w4']) + biases['b4'])
@@ -185,23 +191,23 @@ h_pool6 = tf.layers.max_pooling2d(h_conv5, (2,2),2)
 print(h_pool6)
 
 # Add dropout
-h_pool6_drop = tf.nn.dropout(h_pool6, 0.25)
+h_pool6_drop = tf.nn.dropout(h_pool6, 0.1)
 
 # Fully connected layer
 print(h_pool6_drop)
-h_pool7_flat = tf.reshape(h_pool6_drop, [-1, 5*5*128]) # flatten
+h_pool7_flat = tf.reshape(h_pool6_drop, [-1, 8*8*128]) # flatten
 h_fc1 = tf.nn.relu(tf.matmul(h_pool7_flat, weights['w6']) + biases['b6']) # apply weights
-h_fc1_drop = tf.nn.dropout(h_fc1, 0.5)
+h_fc1_drop = tf.nn.dropout(h_fc1, 0.1)
 
 # Final, softmax layer
 pred = tf.matmul(h_fc1_drop, weights['w7']) + biases['b7']
 pred_probs = tf.nn.softmax(pred)
 
-cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y_))
+cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=pred, labels=y_))
 
-#cost = tf.reduce_mean(-tf.reduce_sum(y_ * tf.log(y_conv), reduction_indices=[1])) # cross-entropy
+#cost = tf.reduce_mean(-tf.reduce_sum(y_ * tf.log(pred_probs), reduction_indices=[1])) # cross-entropy
 optimizer = tf.train.AdamOptimizer(LEARNING_RATE).minimize(cost)
-correct_prediction = tf.equal(tf.argmax(pred,1), tf.argmax(y_,1))
+correct_prediction = tf.equal(tf.argmax(pred_probs,1), tf.argmax(y_,1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
 init = tf.global_variables_initializer()
@@ -213,9 +219,11 @@ with tf.Session() as sess:
         ds = PokemonDataset()
         for epoch in range(EPOCHS):
             total_cost = 0
-            num_batches = int(ds.size()/BATCH_SIZE)
+            num_batches = int(ds.train_size()/BATCH_SIZE)
             for i in range(num_batches):
                 batch_x, batch_y = ds.next_batch_train(BATCH_SIZE)
+                #print(sess.run(pred_probs, feed_dict={x: batch_x, y_: batch_y}))
+                #print(sess.run(batch_y, feed_dict={x: batch_x, y_: batch_y}))
                 c = sess.run(cost, feed_dict={x: batch_x, y_: batch_y})
                 sess.run(optimizer, feed_dict={x: batch_x, y_: batch_y})
                 total_cost += c
@@ -230,10 +238,16 @@ with tf.Session() as sess:
         save_path = saver.save(sess, "Serial/dex-model")
         print("Model saved in file: %s" % save_path)
     elif(isContinuingTraining):
+        print("-------- RESUMING TRAINING FROM SERIALIZED POINT --------")
+
+        # Restore model weights from previously saved model
+        model_path = "Serial/dex-model"
+        saver.restore(sess, model_path)
+
         ds = PokemonDataset()
         for epoch in range(EPOCHS):
             total_cost = 0
-            num_batches = int(ds.size()/BATCH_SIZE)
+            num_batches = int(ds.train_size()/BATCH_SIZE)
             for i in range(num_batches):
                 batch_x, batch_y = ds.next_batch_train(BATCH_SIZE)
                 c = sess.run(cost, feed_dict={x: batch_x, y_: batch_y})
