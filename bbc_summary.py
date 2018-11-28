@@ -232,8 +232,6 @@ def train(all_inputs, all_outputs):
     global output_num_units
     global accuracy_print_interval
 
-
-
     # tf Graph input. None means that the first dimension can be of any size so it represents the batch size
     x = tf.placeholder(tf.float32, [None, input_num_units])
     y = tf.placeholder(tf.float32, [None, output_num_units])
@@ -303,6 +301,52 @@ def train(all_inputs, all_outputs):
         unit_batch_x[0] = vectorize_text(test)
         print(sess.run(tf.round(pred_probs), feed_dict={x: unit_batch_x}))
 
+def test(batch_x):
+    global learning_rate
+    global batch_size
+    global epochs
+    global input_num_units
+    global hidden_num_units
+    global output_num_units
+    global accuracy_print_interval
+
+    # tf Graph input. None means that the first dimension can be of any size so it represents the batch size
+    x = tf.placeholder(tf.float32, [None, input_num_units])
+    y = tf.placeholder(tf.float32, [None, output_num_units])
+
+    # define weights and biases of the neural network
+    weights = {
+    'hidden': tf.Variable(tf.random_normal([input_num_units, hidden_num_units])),
+    'output': tf.Variable(tf.random_normal([hidden_num_units, output_num_units]))
+    }
+
+    biases = {
+    'hidden': tf.Variable(tf.random_normal([hidden_num_units])),
+    'output': tf.Variable(tf.random_normal([output_num_units]))
+    }
+
+    # 'Saver' op to save and restore all the variables
+    saver = tf.train.Saver()
+
+    # Now create our neural networks computational graph
+    # Wx.Wh + Bh
+    hidden_layer = tf.add(tf.matmul(x, weights['hidden']), biases['hidden'])
+    #activation function to hidden layer calculation
+    hidden_layer = tf.nn.relu(hidden_layer)
+    # Output calc
+    output_layer = tf.matmul(hidden_layer, weights['output']) + biases['output']
+
+    # Softmax
+    pred_probs = tf.nn.softmax(output_layer)
+
+    init = tf.global_variables_initializer()
+    with tf.Session() as sess:
+        sess.run(init)
+        save_path = "Serial/bbc_textsum"
+        saver.restore(sess, save_path)
+        return sess.run(tf.round(pred_probs), feed_dict={x: batch_x})
+
+
 
 # t,s = load_texts_and_summaries("bbc")
 # #print("{} {}".format(s[0], t[0]))
@@ -316,7 +360,16 @@ outputs = np.load('Serial/outputs.npy')
 # print("{}".format(outputs[0]))
 # print(len(inputs[0]))
 # print(len(outputs))
-train(inputs,outputs)
+#train(inputs,outputs)
+
+# Test on one sentence
+text = "British hurdler Sarah Claxton is confident she can win her first major medal at next month's European Indoor Championships in Madrid"
+unit_batch_x = np.zeros((1, input_num_units))
+unit_batch_x[0] = vectorize_text(text)
+results = test(unit_batch_x)
+for res in results:
+    print( " ".join([word for idx,word in enumerate(text.split(" ")) if(res[idx] == 1)]) )
+
 
 # doc1 = spacy_nlp(u"European leaders say Asian states must let their currencies rise against the US dollar to ease pressure on the euro.")
 # doc2 = spacy_nlp(u"The European single currency has shot up to successive all-time highs against the dollar over the past few months. Tacit approval from the White House for the weaker greenback, which could help counteract huge deficits, has helped trigger the move. But now Europe says the euro has had enough, and Asia must now share some of the burden.")
