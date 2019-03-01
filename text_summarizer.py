@@ -348,7 +348,7 @@ def test(batch_x):
 
 
 
-# t,s = load_texts_and_summaries("bbc")
+# t,s = load_texts_and_summaries("Data/bbc")
 # #print("{} {}".format(s[0], t[0]))
 # inputs,outputs = vectorize_texts_and_summaries(t, s)
 # # SAVE
