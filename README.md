@@ -1,5 +1,5 @@
 # pyTextSum
-Simple neural extractive text summarization 
+Simple neural extractive text summarization written in Python
 
 This repository contains implementation of a neural approach to extractive text summarization using Tensorflow. 
 
